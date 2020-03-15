@@ -149,8 +149,7 @@ class PerformanceTransformerV1(Module):
                 memory_mask=None, src_key_padding_mask=None,
                 tgt_key_padding_mask=None, memory_key_padding_mask=None):
 
-        # import pdb
-        # pdb.set_trace()
+        # embedd the input
         src = self.input_embedding(src) * math.sqrt(self.d_model)
         print(src.shape)
         src = self.pe(src)
