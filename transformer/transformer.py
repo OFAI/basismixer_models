@@ -149,7 +149,6 @@ class PerformanceTransformerV1(Module):
 
         # embedd the input
         src = self.input_embedding(src) * math.sqrt(self.d_model)
-        print(src.shape)
         src = self.pe(src)
 
         if tgt is not None:
@@ -165,7 +164,7 @@ class PerformanceTransformerV1(Module):
                                    memory_key_padding_mask=memory_key_padding_mask)
         else:
             tgt = self.transformer.encoder(src, mask=src_mask,
-                                            src_key_padding_mask=src_key_padding_mask)
+                                           src_key_padding_mask=src_key_padding_mask)
 
             
         return self.out(tgt)
