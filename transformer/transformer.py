@@ -222,7 +222,7 @@ class TransformerTrainer(NNTrainer):
                 input = input.to(self.device).type(self.dtype)
                 target = target.to(self.device).type(self.dtype)
 
-            output = self.model(input, target)
+            output = self.model(input.transpose(0, 1), target.transpose(0, 1))
             loss = self.train_loss(output, target)
 
             losses.append(loss.item())
@@ -248,7 +248,7 @@ class TransformerTrainer(NNTrainer):
                     target = target.to(self.device).type(self.dtype)
                     input = input.to(self.device).type(self.dtype)
 
-                output = self.model(input)
+                output = self.model(input.transpose(0, 1))
 
                 if isinstance(self.valid_loss, (list, tuple)):
                     loss = [c(output, target) for c in self.valid_loss]
