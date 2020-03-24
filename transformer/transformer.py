@@ -124,7 +124,8 @@ class PerformanceTransformerV1(NNModel):
                  output_names=None,
                  dtype=torch.float32,
                  input_type=None,
-                 device=None):
+                 device=None,
+                 batch_first=True):
 
         super().__init__(input_names=input_names,
                          output_names=output_names,
@@ -155,6 +156,7 @@ class PerformanceTransformerV1(NNModel):
         self.output_size = output_size
 
         self.out = nn.Linear(d_model, output_size)
+        self.batch_first = batch_first
 
 
     def forward(self, src, tgt=None, src_mask=None, tgt_mask=None,
@@ -180,7 +182,12 @@ class PerformanceTransformerV1(NNModel):
             tgt = self.transformer.encoder(src, mask=src_mask,
                                            src_key_padding_mask=src_key_padding_mask)
 
-        return self.out(tgt)
+        output = self.out(tgt)
+
+        if self.batch_first:
+            return output.transpose(0, 1)
+        else:
+            return output
 
 
 class TransformerTrainer(NNTrainer):
