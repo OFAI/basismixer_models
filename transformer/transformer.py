@@ -3,10 +3,14 @@ import math
 import numpy as np
 import torch
 
+
 from torch import nn
 from torch.nn import Module
+from tqdm import tqdm
 
-class PositionalEncoding(Module):
+from basismixer.predictive_models import NNModel, NNTrainer, MSELoss
+
+class VanillaPositionalEncoding(Module):
     r"""Inject some information about the relative or absolute position of the tokens
         in the sequence. The positional encodings have the same dimension as
         the embeddings, so that the two can be summed. Here, we use sine and cosine
@@ -20,7 +24,7 @@ class PositionalEncoding(Module):
         dropout: the dropout value (default=0.1).
         max_len: the max. length of the incoming sequence (default=5000).
     Examples:
-        >>> pos_encoder = PositionalEncoding(d_model)
+        >>> pos_encoder = VanillaPositionalEncoding(d_model)
     """
 
     def __init__(self, d_model, dropout=0.1, max_len=5000):
@@ -110,14 +114,24 @@ class DenseEmbedding(Module):
         return output
 
 
-class PerformanceTransformerV1(Module):
+class PerformanceTransformerV1(NNModel):
 
     def __init__(self, input_size, output_size,
                  d_model=512, nhead=8, num_encoder_layers=6,
                  num_decoder_layers=6, dim_feedforward=2048, dropout=0.1,
-                 activation="relu"):
+                 activation="relu",
+                 input_names=None,
+                 output_names=None,
+                 dtype=torch.float32,
+                 input_type=None,
+                 device=None):
 
-        super().__init__()
+        super().__init__(input_names=input_names,
+                         output_names=output_names,
+                         input_type=input_type,
+                         dtype=dtype,
+                         device=device,
+                         is_rnn=False)
 
         self.input_embedding = DenseEmbedding(input_size=input_size,
                                               embedding_size=d_model,
@@ -125,7 +139,7 @@ class PerformanceTransformerV1(Module):
         self.output_embedding = DenseEmbedding(input_size=output_size,
                                                embedding_size=d_model,
                                                hidden_size=[512])
-        self.pe = PositionalEncoding(d_model=d_model)
+        self.pe = VanillaPositionalEncoding(d_model=d_model)
 
         self.transformer = nn.Transformer(d_model=d_model,
                                           nhead=nhead,
@@ -166,8 +180,84 @@ class PerformanceTransformerV1(Module):
             tgt = self.transformer.encoder(src, mask=src_mask,
                                            src_key_padding_mask=src_key_padding_mask)
 
-            
         return self.out(tgt)
+
+
+class TransformerTrainer(NNTrainer):
+    def __init__(self, model, train_loss, optimizer,
+                 train_dataloader,
+                 valid_loss=None,
+                 valid_dataloader=None,
+                 best_comparison='smaller',
+                 lr_scheduler=None,
+                 n_gpu=1,
+                 epochs=100,
+                 save_freq=10,
+                 early_stopping=100,
+                 out_dir='.',
+                 resume_from_saved_model=None):
+        super().__init__(model=model,
+                         train_loss=train_loss,
+                         optimizer=optimizer,
+                         train_dataloader=train_dataloader,
+                         valid_loss=valid_loss,
+                         valid_dataloader=valid_dataloader,
+                         best_comparison=best_comparison,
+                         n_gpu=n_gpu,
+                         epochs=epochs,
+                         save_freq=save_freq,
+                         early_stopping=early_stopping,
+                         out_dir=out_dir,
+                         resume_from_saved_model=resume_from_saved_model)
+        self.lr_scheduler = lr_scheduler
+
+    def train_step(self, epoch, *args, **kwargs):
+
+        self.model.train()
+        losses = []
+        bar = tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader))
+        for b_idx, (input, target) in bar:
+
+            if self.device is not None:
+                input = input.to(self.device).type(self.dtype)
+                target = target.to(self.device).type(self.dtype)
+
+            output = self.model(input, target)
+            loss = self.train_loss(output, target)
+
+            losses.append(loss.item())
+            bar.set_description("epoch: {}/{}".format(epoch, self.epochs))
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+
+        return np.mean(losses)
+
+    def valid_step(self, *args, **kwargs):
+
+        self.model.eval()
+        losses = []
+        with torch.no_grad():
+            for input, target in self.valid_dataloader:
+
+                if self.device is not None:
+                    target = target.to(self.device).type(self.dtype)
+                    input = input.to(self.device).type(self.dtype)
+
+                output = self.model(input)
+
+                if isinstance(self.valid_loss, (list, tuple)):
+                    loss = [c(output, target) for c in self.valid_loss]
+                else:
+                    loss = [self.valid_loss(output, target)]
+                losses.append([l.item() for l in loss])
+
+        return np.mean(losses, axis=0)
+
 
 
 if __name__ == '__main__':
@@ -179,10 +269,13 @@ if __name__ == '__main__':
     output_size = 4
     src = torch.randn((1, 15, input_size), dtype=torch.float32)
     trg = torch.randn((1, 15, output_size), dtype=torch.float32)
+    input_names = ['i_{0}'.format(i) for i in range(input_size)]
+    output_names = ['o_{0}'.format(i) for o in range(output_names)]
 
-    transformer = PerformanceTransformerV1(input_size, output_size)
+    transformer = PerformanceTransformerV1(input_size, output_size, input_names=input_names,
+                                           output_names=output_names)
 
-    rec = transformer(src)
+    rec = transformer(src, trg)
     
 
         

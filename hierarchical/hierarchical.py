@@ -5,6 +5,8 @@ from torch import nn
 from torch.nn import Module
 import torch.nn.functional as F
 
+from basismixer.predictive_models import get_nonlinearity
+
 class HierarchicalSequentialModel(Module):
     """
     Hierarchichal Model 
@@ -55,13 +57,7 @@ class ContextAttention(Module):
         self.n_heads = n_heads
         self.linear = nn.Linear(in_features=size,
                                 out_features=size)
-        if nl is None:
-            self.nl = lambda x: x
-        elif callable(nl):
-            self.nl = nl
-        else:
-            raise ValueError('`nl` must be a callable or None')
-        
+        self.nl = get_nonlinearity(nl)
         if size % n_heads != 0:
             raise ValueError("size must be dividable by n_heads", size, n_heads)
         self.head_size = int(size // n_heads)
@@ -104,11 +100,6 @@ class HierarchicalAttentionModel(Module):
         attention_output = []
         for aix in attention_indices:
             at_input = torch.cat([o[ai, :, :] for o, ai in zip(inputs, aix)], dim=0)
-            # at_input = []
-            # for o, ai in zip(inputs, aix):
-            #     at_input.append(o[ai, :, :])
-
-            # at_input = torch.cat(at_input, dim=0)
             attention_output.append(self.attention(at_input))
 
         attention_output = torch.cat(attention_output, dim=0)
@@ -116,123 +107,3 @@ class HierarchicalAttentionModel(Module):
         output, _ = self.sm(attention_output)
 
         return output
-        
-
-
-    
-if __name__ == '__main__':
-
-    import matplotlib.pyplot as plt
-    from transformer.transformer import PerformanceTransformerV1
-    seq_len = 1000
-    input_size = 200
-    x = torch.randn((seq_len, 1, input_size), requires_grad=True)
-    attention = ContextAttention(12, n_heads=2)
-    
-    n_partitions = np.random.randint(5, 10)
-
-    partitions = np.random.choice(np.arange(1, seq_len), n_partitions, replace=False)
-    partitions.sort()
-
-    hierarchy_idxs = np.zeros((seq_len, 3))
-
-    hierarchy_idxs[-1] = 1
-    hierarchy_idxs[:, 0] = 1
-    hierarchy_idxs[partitions - 1, 1] = 1
-
-    n_partitions = np.random.randint(2, max(n_partitions, 3))
-    partitions = np.random.choice(partitions, n_partitions, replace=False)
-    partitions.sort()
-    hierarchy_idxs[partitions -1, 2] = 1
-
-    sm_0 = nn.LSTM(input_size, hidden_size=6, bidirectional=True)
-    # sm_1 = nn.LSTM(input_size=int(6 * (1 + sm_0.bidirectional)), hidden_size=6, num_layers=1, bidirectional=True)
-    # sm_2 = nn.LSTM(input_size=int(6 * (1 + sm_1.bidirectional)), hidden_size=6, num_layers=1, bidirectional=True)
-    # sm_3 = nn.LSTM(input_size=int(6 * (1 + sm_2.bidirectional)), hidden_size=6, num_layers=1, bidirectional=True)
-    # sm_0 = PerformanceTransformerV1(input_size=input_size, output_size=12)
-    sm_1 = PerformanceTransformerV1(input_size=12, output_size=12)
-    sm_2 = PerformanceTransformerV1(input_size=12, output_size=12)
-    sm_3 = PerformanceTransformerV1(input_size=12, output_size=12)
-    
-    
-
-    time_steps = np.unique(hierarchy_idxs[:, 1])
-    # time_steps.sort()
-
-    unique_idxs = [np.where(hierarchy_idxs[:, 1] == u)[0] for u in time_steps]
-    h_idxs = np.zeros(len(x), dtype=np.int)
-
-    h_prev = None
-    hierarchical_idxs = []
-    try:
-        o, _ = sm_0(x, h_prev)
-    except:
-        o = sm_0(x)
-    
-    h_idxs = np.where(hierarchy_idxs[:, 0] == 1)[0]
-    hierarchical_idxs.append(h_idxs)
-    try:
-        o, _ = sm_1(o[h_idxs, :, :])
-    except:
-        o = sm_1(o[h_idxs, :, :])
-    h_idxs = np.where(hierarchy_idxs[h_idxs, 1] == 1)[0]
-    hierarchical_idxs.append(h_idxs)
-    try:
-        o, _ = sm_2(o[h_idxs, :, :])
-    except:
-        o = sm_2(o[h_idxs, :, :])
-    h_idxs = np.where(hierarchy_idxs[h_idxs, 2] == 1)[0]
-    hierarchical_idxs.append(h_idxs)
-
-    try:
-        o, _ = sm_3(o[h_idxs, :, :])
-    except:
-        o = sm_3(o[h_idxs, :, :])
-
-    hsm = HierarchicalSequentialModel([sm_0, sm_1, sm_2, sm_3])
-    out, outputs = hsm(x, hierarchical_idxs)
-    at = attention(out)
-
-    n_divisions = 3
-    attention_idxs = np.random.choice(np.arange(n_divisions), len(x), replace=True)
-    attention_idxs.sort()
-
-    u_ais = np.unique(attention_idxs)
-
-    attention_idxs_0 = [np.where(attention_idxs == u)[0] for u in u_ais]
-    attention_idxs_1 = attention_idxs_0
-    attention_indices = [ix for ix in zip(attention_idxs_0, attention_idxs_1)]
-
-    
-
-    attention_output = []
-    for aix in attention_indices:
-        at_input = []
-        for o, ai in zip(outputs, aix):
-            at_input.append(o[ai, :, :])
-
-        at_input = torch.cat(at_input, dim=0)
-        attention_output.append(attention(at_input))
-
-    attention_output = torch.cat(attention_output)
-
-    att_sm_0 = nn.LSTM(12, hidden_size=6, num_layers=1, bidirectional=True)
-
-    
-    # for o, aix in zip(outputs, attention_indices):
-    #     at_input.append(o[aix, :, :])
-    # at_input = torch.cat([o[aix, :, :] for o, aix in zip(outputs, attention_indices)], 0)
-    
-    
-    
-
-
-    
-
-    
-    
-    
-    # for s, uc in zip(ht_split, u_c):
-    #     ai = torch.matmul(s, uc)
-    #     a_i.append(ai)
-    
