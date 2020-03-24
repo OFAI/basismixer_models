@@ -163,6 +163,14 @@ class PerformanceTransformerV1(NNModel):
                 memory_mask=None, src_key_padding_mask=None,
                 tgt_key_padding_mask=None, memory_key_padding_mask=None):
 
+        if self.batch_first:
+            src = src.transpose(0, 1)
+            if tgt is not None:
+                tgt = tgt.transpose(0, 1)
+            if src_mask is not None:
+                src_mask = src_mask.transpose(0, 1)
+            if tgt_mask is not None:
+                tgt_mask = tgt_mask.transpose(0, 1)
         # embedd the input
         src = self.input_embedding(src) * math.sqrt(self.d_model)
         src = self.pe(src)
@@ -229,7 +237,7 @@ class TransformerTrainer(NNTrainer):
                 input = input.to(self.device).type(self.dtype)
                 target = target.to(self.device).type(self.dtype)
 
-            output = self.model(input.transpose(0, 1), target.transpose(0, 1))
+            output = self.model(input, target)
             loss = self.train_loss(output, target)
 
             losses.append(loss.item())
@@ -255,7 +263,7 @@ class TransformerTrainer(NNTrainer):
                     target = target.to(self.device).type(self.dtype)
                     input = input.to(self.device).type(self.dtype)
 
-                output = self.model(input.transpose(0, 1))
+                output = self.model(input)
 
                 if isinstance(self.valid_loss, (list, tuple)):
                     loss = [c(output, target) for c in self.valid_loss]

@@ -42,11 +42,11 @@ CONFIG = [
                           'beat_period_mean', 'beat_period_std'],
          seq_len=100,
          model=dict(constructor=['basismixer.models.transformer', 'PerformanceTransformerV1'],
-                    args=dict(d_model=128)),
+                    args=dict(d_model=64)),
          train_args=dict(
              optimizer=['Adam', dict(lr=1e-4)],
              epochs=1000,
-             save_freq=1,
+             save_freq=5,
              early_stopping=100,
              batch_size=50,
          )
