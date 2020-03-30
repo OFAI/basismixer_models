@@ -10,6 +10,16 @@ from tqdm import tqdm
 
 from basismixer.predictive_models import NNModel, NNTrainer, MSELoss
 
+def standardize(func):
+    """Standardize decorator for Transformer architectures
+    """
+
+    def wrapper(self, *args, **kwargs):
+        return func(self, *args, **kwargs)* self.out_std + self.out_mean
+
+    return wrapper
+                    
+
 class VanillaPositionalEncoding(Module):
     r"""Inject some information about the relative or absolute position of the tokens
         in the sequence. The positional encodings have the same dimension as
@@ -132,7 +142,7 @@ class PerformanceTransformerV1(NNModel):
                          input_type=input_type,
                          dtype=dtype,
                          device=device,
-                         is_rnn=False)
+                         is_rnn=True)
 
         self.input_embedding = DenseEmbedding(input_size=input_size,
                                               embedding_size=d_model,
@@ -158,7 +168,7 @@ class PerformanceTransformerV1(NNModel):
         self.out = nn.Linear(d_model, output_size)
         self.batch_first = batch_first
 
-
+    @standardize
     def forward(self, src, tgt=None, src_mask=None, tgt_mask=None,
                 memory_mask=None, src_key_padding_mask=None,
                 tgt_key_padding_mask=None, memory_key_padding_mask=None):
@@ -272,25 +282,5 @@ class TransformerTrainer(NNTrainer):
                 losses.append([l.item() for l in loss])
 
         return np.mean(losses, axis=0)
-
-
-
-if __name__ == '__main__':
-
-    
-    input_size = 10
-    embedding_size = 7
-    hidden_size = [9, 8]
-    output_size = 4
-    src = torch.randn((1, 15, input_size), dtype=torch.float32)
-    trg = torch.randn((1, 15, output_size), dtype=torch.float32)
-    input_names = ['i_{0}'.format(i) for i in range(input_size)]
-    output_names = ['o_{0}'.format(i) for o in range(output_names)]
-
-    transformer = PerformanceTransformerV1(input_size, output_size, input_names=input_names,
-                                           output_names=output_names)
-
-    rec = transformer(src, trg)
-    
 
         
