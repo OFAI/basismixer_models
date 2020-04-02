@@ -99,6 +99,7 @@ class FeedForwardModel(NNModel):
                  hidden_size, dropout=0.0,
                  nonlinearity=nn.ReLU(),
                  norm_hidden=True,
+                 norm_input=True,
                  input_names=None,
                  output_names=None,
                  input_type=None,
@@ -125,7 +126,7 @@ class FeedForwardModel(NNModel):
                                  'as `hidden_size`.')
 
         if not isinstance(norm_hidden, (list, tuple)):
-            self.norm_hidden = [norm_hidden]
+            self.norm_hidden = len(self.hidden_size) * [norm_hidden] 
         else:
             if len(norm_hidden) != len(self.hidden_size):
                 raise ValueError('`norm_hidden` should be the same length '
@@ -145,6 +146,9 @@ class FeedForwardModel(NNModel):
 
         in_features = input_size
         hidden_layers = []
+
+        if norm_input:
+            hidden_layers.append(Norm(input_size))
         for hs, p, nl, norm in zip(self.hidden_size, self.dropout,
                                    self.nonlinearity, self.norm_hidden):
             hidden_layers.append(nn.Linear(in_features, hs))
