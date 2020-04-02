@@ -5,8 +5,8 @@ from torch import nn
 
 from basismixer.predictive_models import (construct_model as c_model,
                                           NNModel)
-from basismixer.predictive_models.architectures import FeedForwardModel, RecurrentModel
-
+from basismixer.predictive_models.base import get_nonlinearity
+from basismixer.models.utils import Norm
 
 class BidirectionalRNN(NNModel):
 
@@ -90,20 +90,85 @@ class BidirectionalRNN(NNModel):
             return y.view(seq_len, batch_size, self.output_size)
 
 
-if __name__ == '__main__':
+class FeedForwardModel(NNModel):
+    """Simple Dense FFNN
+    """
 
-    input_size = 7
-    output_size = 4
-    x = torch.rand(10, 2, input_size)
+    def __init__(self,
+                 input_size, output_size,
+                 hidden_size, dropout=0.0,
+                 nonlinearity=nn.ReLU(),
+                 norm_hidden=True,
+                 input_names=None,
+                 output_names=None,
+                 input_type=None,
+                 dtype=torch.float32,
+                 device=None):
+        super().__init__(input_names=input_names,
+                         output_names=output_names,
+                         input_type=input_type,
+                         dtype=dtype,
+                         device=device,
+                         is_rnn=False)
 
-    input_names = ['i{0}'.format(i) for i in range(input_size)]
-    output_names = ['o{0}'.format(o) for o in range(output_size)]
+        self.input_size = input_size
+        if not isinstance(hidden_size, (list, tuple)):
+            hidden_size = [hidden_size]
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+
+        if not isinstance(dropout, (list, tuple)):
+            self.dropout = len(self.hidden_size) * [dropout]
+        else:
+            if len(dropout) != len(self.hidden_size):
+                raise ValueError('`dropout` should be the same length '
+                                 'as `hidden_size`.')
+
+        if not isinstance(norm_hidden, (list, tuple)):
+            self.norm_hidden = [norm_hidden]
+        else:
+            if len(norm_hidden) != len(self.hidden_size):
+                raise ValueError('`norm_hidden` should be the same length '
+                                 'as `hidden_size`.')
+
+        if not isinstance(nonlinearity, (list, tuple)):
+            self.nonlinearity = len(self.hidden_size) * [nonlinearity]
+        else:
+            if len(nonlinearity) != len(self.hidden_size):
+                raise ValueError('`nonlinearity` should be the same length ',
+                                 'as `hidden_size`.')
+
+        self.nonlinearity = [get_nonlinearity(nl) for nl in self.nonlinearity]
+
+        if self.output_names is None:
+            self.output_names = [str(i) for i in range(self.output_size)]
+
+        in_features = input_size
+        hidden_layers = []
+        for hs, p, nl, norm in zip(self.hidden_size, self.dropout,
+                                   self.nonlinearity, self.norm_hidden):
+            hidden_layers.append(nn.Linear(in_features, hs))
+            in_features = hs
+            hidden_layers.append(nl)
+            
+            if p != 0:
+                hidden_layers.append(nn.Dropout(p))
+
+            if norm:
+                hidden_layers.append(Norm(hs))
+
+        self.hidden_layers = nn.Sequential(*hidden_layers)
+
+        self.output = nn.Linear(in_features=self.hidden_size[-1],
+                                out_features=self.output_size)
+
+    def forward(self, x):
+        h = self.hidden_layers(x)
+        output = self.output(h)
+        return output
+
+
+
+# def JointModel(NNModel):
+
     
-    rnn = BidirectionalRNN(input_size=input_size,
-                           output_size=output_size,
-                           input_names=input_names,
-                           output_names=output_names,
-                           recurrent_size=8,
-                           hidden_size=6, n_layers=1,
-                           batch_first=False)
-    y = rnn(x)

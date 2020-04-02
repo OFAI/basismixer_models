@@ -1,1 +1,2 @@
-from .bidirectional import BidirectionalRNN as BiRNN
+from .bidirectional import (BidirectionalRNN as BiRNN,
+                            FeedForwardModel)
