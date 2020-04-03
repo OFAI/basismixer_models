@@ -45,7 +45,7 @@ CONFIG = [
          train_args=dict(
              optimizer=['Adam', dict(lr=1e-4)],
              epochs=100,
-             save_freq=10,
+             save_freq=5,
              early_stopping=100,
              batch_size=1000,
          )

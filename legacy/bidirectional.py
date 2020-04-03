@@ -99,7 +99,7 @@ class FeedForwardModel(NNModel):
                  hidden_size, dropout=0.0,
                  nonlinearity=nn.ReLU(),
                  norm_hidden=True,
-                 norm_input=True,
+                 norm_input=False,
                  input_names=None,
                  output_names=None,
                  input_type=None,
