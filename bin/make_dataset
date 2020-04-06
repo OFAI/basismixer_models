@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+
+import argparse
+import json
+import logging
+import os
+
+import numpy as np
+from torch.utils.data import Dataset, ConcatDataset
+
+from partitura import load_musicxml, load_match
+from partitura.score import expand_grace_notes, remove_grace_notes
+from basismixer.basisfunctions import make_basis
+from basismixer.utils import (pair_files,
+                              get_unique_onset_idxs,
+                              notewise_to_onsetwise,
+                              save_pyc_bz,
+                              load_pyc_bz)
+
+from basismixer.performance_codec import get_performance_codec
+
+CONFIG = dict(
+    basis_functions=['polynomial_pitch_basis',
+                     'loudness_direction_basis',
+                     'tempo_direction_basis',
+                     'articulation_basis',
+                     'duration_basis',
+                     # my_basis,
+                     'grace_basis',
+                     'slur_basis',
+                     'fermata_basis',
+                     # 'metrical_basis'
+                     'metrical_strength_basis',
+                     'time_signature_basis',
+                     'relative_score_position_basis'
+         ])
+
+def cache_score_parts(mxml_dir, part_dir='/tmp', validate=True):
+    if not os.path.exists(part_dir):
+        os.mkdir(part_dir)
+
+    not_loaded = []
+    invalid_parts = []
+    validate = True
+    for f in os.listdir(mxml_dir):
+        path = os.path.join(mxml_dir, f)
+        if os.path.isfile(path):
+            try:
+                name = os.path.basename(os.path.splitext(path)[0])
+                out_part = os.path.join(part_dir, name + '.pyc.bz')
+                if not os.path.exists(out_part):
+                    part = load_musicxml(path)
+                    save_pyc_bz(part, out_part)
+                    
+                    if validate:
+                        saved_part = load_pyc_bz(out_part)
+                        if not np.all(part.note_array == saved_part.note_array):
+                            invalid_parts.append(path)
+            except:
+                not_loaded.append(path)
+
+    with open(os.path.join(part_dir, 'invalid_parts.txt'), 'w') as f:
+        f.write('\n'.join(invalid_parts))
+
+    with open(os.path.join(part_dir, 'not_loaded.txt'), 'w') as f:
+        f.write('\n'.join(not_loaded))
+
+    return not_loaded, invalid_parts
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser('Create a dataset')
+    parser.add_argument('part_dir',
+                        help=('Path to the score parts in compressed pickle format. '
+                              'If the mxml-folder is provided, the parts will be cached in this folder.'))
+
+    parser.add_argument('bf_dir',
+                        help=('Directory to store the basis functions in compressed pickle format'),)
+
+    parser.add_argument('--mxml-dir',
+                        help='Path to the scores in MusicXML format',
+                        default=None)
+    parser.add_argument('--config',
+                        help='Config file for specifying basis functions in JSON format',
+                        default=None)
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.bf_dir):
+        os.mkdir(args.bf_dir)
+
+    if not os.path.exists(args.part_dir):
+        os.mkdir(args.part_dir)
+
+    if args.config is None:
+        args.config = CONFIG
+    else:
+        args.config = json.load(open(args.config))
+
+    basis_functions = args.config['basis_functions']
+
+    if os.path.exists(os.path.join(args.part_dir, 'invalid_parts.txt')):
+        invalid_parts = list(np.loadtxt(os.path.join(args.part_dir, 'invalid_parts.txt'),
+                                        dtype=str))
+    else:
+        invalid_parts = []
+    
+    if args.mxml_dir is not None:
+        cache_score_parts(args.mxml_dir, part_dir=args.part_dir)
+
+    for f in os.listdir(args.part_dir):
+        path = os.path.join(args.part_dir, f)
+        name = os.path.basename(path)
+        out_fn = os.path.join(args.bf_dir, name)
+        if os.path.isfile(path) and path not in invalid_parts:
+            if not os.path.exists(out_fn):
+                try:
+                    part = load_pyc_bz(path)
+                    basis, bf_names = make_basis(part, basis_functions)
+                    save_pyc_bz(dict(part=part,
+                                     basis=basis,
+                                     bf_names=bf_names),
+                                out_fn)
+                except:
+                    pass
