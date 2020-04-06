@@ -1,0 +1,59 @@
+#!/usr/bin/env python
+import argparse
+import logging
+import os
+
+logging.basicConfig(level=logging.INFO)
+
+import numpy as np
+
+from partitura import load_match
+
+from basismixer.utils import save_pyc_bz
+
+
+LOGGER = logging.getLogger(__name__)
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser('Cache dataset of performances')
+    parser.add_argument('match_dir',
+                        help='Path to the match files')
+    parser.add_argument('alignment_dir',
+                        help='Path to store the alignments in compressed pickle format')
+    parser.add_argument('--quirks',
+                        help='For Magaloff/Zeilinger dataset',
+                        action='store_true', default=False)
+
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.alignment_dir):
+        os.mkdir(args.alignment_dir)
+
+    not_loaded = []
+    for f in os.listdir(args.match_dir):
+        path = os.path.join(args.match_dir, f)
+
+        out_fn = os.path.join(args.alignment_dir, os.path.basename(os.path.splitext(path)[0]) + 'pyc.bz') 
+
+        if not os.path.exists(out_fn):
+
+            try:
+                LOGGER.info('Processing {0}'.format(path))
+                ppart, alignment = load_match(path, first_note_at_zero=True)
+                if args.quirks:
+                    for n in alignment:
+                        if n['label'] == 'match':
+                            n['score_id'] = n['score_id'].split('-')[0]
+
+
+                save_pyc_bz(dict(ppart=ppart,
+                                 alignment=alignment),
+                            out_fn)
+
+            except:
+                not_loaded.append(path)
+
+    with open(os.path.join(args.alignment_dir, 'not_loaded.txt'), 'w') as f:
+        f.write('\n'.join(not_loaded))
