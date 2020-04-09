@@ -5,8 +5,9 @@ import json
 import logging
 import os
 
+logging.basicConfig(level=logging.INFO)
+
 import numpy as np
-from torch.utils.data import Dataset, ConcatDataset
 
 from partitura import load_musicxml, load_match
 from partitura.score import expand_grace_notes, remove_grace_notes
@@ -46,6 +47,7 @@ def cache_score_parts(mxml_dir, part_dir='/tmp', validate=True):
         path = os.path.join(mxml_dir, f)
         if os.path.isfile(path):
             try:
+                LOGGER.info('Caching score {0}'.format(path))
                 name = os.path.basename(os.path.splitext(path)[0])
                 out_part = os.path.join(part_dir, name + '.pyc.bz')
                 if not os.path.exists(out_part):
@@ -68,8 +70,7 @@ def cache_score_parts(mxml_dir, part_dir='/tmp', validate=True):
     return not_loaded, invalid_parts
 
 
-if __name__ == '__main__':
-
+def make_dataset_score():
     parser = argparse.ArgumentParser('Create a dataset')
     parser.add_argument('part_dir',
                         help=('Path to the score parts in compressed pickle format. '
@@ -116,6 +117,7 @@ if __name__ == '__main__':
         if os.path.isfile(path) and path not in invalid_parts:
             if not os.path.exists(out_fn):
                 try:
+                    LOGGER.info('Processing {0}'.format(path))
                     part = load_pyc_bz(path)
                     basis, bf_names = make_basis(part, basis_functions)
                     save_pyc_bz(dict(part=part,
@@ -124,3 +126,48 @@ if __name__ == '__main__':
                                 out_fn)
                 except:
                     pass
+
+def make_dataset_performance():
+    parser = argparse.ArgumentParser('Cache dataset of performances')
+    parser.add_argument('match_dir',
+                        help='Path to the match files')
+    parser.add_argument('alignment_dir',
+                        help='Path to store the alignments in compressed pickle format')
+    parser.add_argument('--quirks',
+                        help='For Magaloff/Zeilinger dataset',
+                        action='store_true', default=False)
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.alignment_dir):
+        os.mkdir(args.alignment_dir)
+
+    not_loaded = []
+    for f in os.listdir(args.match_dir):
+        path = os.path.join(args.match_dir, f)
+
+        out_fn = os.path.join(args.alignment_dir, os.path.basename(os.path.splitext(path)[0]) + 'pyc.bz') 
+
+        if not os.path.exists(out_fn):
+
+            try:
+                LOGGER.info('Processing {0}'.format(path))
+                ppart, alignment = load_match(path, first_note_at_zero=True)
+                if args.quirks:
+                    for n in alignment:
+                        if n['label'] == 'match':
+                            n['score_id'] = n['score_id'].split('-')[0]
+
+                save_pyc_bz(dict(ppart=ppart,
+                                 alignment=alignment),
+                            out_fn)
+            except:
+                not_loaded.append(path)
+
+    with open(os.path.join(args.alignment_dir, 'not_loaded.txt'), 'w') as f:
+        f.write('\n'.join(not_loaded))
+
+
+if __name__ == '__main__':
+    make_dataset_score()
+    # make_dataset_performance()
