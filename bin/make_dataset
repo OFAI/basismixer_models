@@ -11,7 +11,7 @@ import numpy as np
 
 from partitura import load_musicxml, load_match
 from partitura.score import expand_grace_notes, remove_grace_notes
-from basismixer.basisfunctions import make_basis
+from partitura.musicanalysis import make_note_feats
 from basismixer.utils import (pair_files,
                               get_unique_onset_idxs,
                               notewise_to_onsetwise,
@@ -138,7 +138,7 @@ def make_dataset_score():
                     LOGGER.info('Remove grace notes')
                     remove_grace_notes(part)
 
-                basis, bf_names = make_basis(part, basis_functions)
+                basis, bf_names = make_note_feats(part, basis_functions)
                 save_pyc_bz(dict(part=part,
                                  basis=basis,
                                  bf_names=bf_names),
